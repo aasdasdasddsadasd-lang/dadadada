@@ -3,12 +3,11 @@ import ipaddress
 import os
 import socket
 import math
-import re
 import aiohttp
 
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message
-from aiogram.filters import CommandStart
+from aiogram.filters import Command, CommandStart
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PROXYCHECK_KEY = os.getenv("PROXYCHECK_KEY")
@@ -17,6 +16,7 @@ bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
 
 
+# ---------- DATA ----------
 
 DATACENTER = [
     "amazon", "aws", "google", "azure", "ovh",
@@ -30,6 +30,7 @@ MOBILE = ["mts", "tele2", "megafon", "beeline", "yota"]
 HOME = ["rostelecom", "dom.ru", "er-telecom", "ttk", "ufanet", "mediacom"]
 
 
+# ---------- UTILS ----------
 
 def is_ip(value: str):
     try:
@@ -75,8 +76,7 @@ def calculate_distance(lat1, lon1, lat2, lon2):
 
     a = (
         math.sin(d_phi / 2) ** 2 +
-        math.cos(phi1) *
-        math.cos(phi2) *
+        math.cos(phi1) * math.cos(phi2) *
         math.sin(d_lambda / 2) ** 2
     )
 
@@ -84,6 +84,8 @@ def calculate_distance(lat1, lon1, lat2, lon2):
 
     return round(R * c, 2)
 
+
+# ---------- ASYNC API ----------
 
 async def geo_lookup(session, ip):
     try:
@@ -129,17 +131,22 @@ async def proxy_check(session, ip):
         }
 
 
+# ---------- HANDLERS ----------
 
 @dp.message(CommandStart())
 async def start(message: Message):
     await message.answer(
-        "📡 Отправьте IP или используйте:\n"
-        "<code>/distance ip1 ip2</code>",
+        "📡 Бот IP анализа\n\n"
+        "Команды:\n"
+        "<code>/distance ip1 ip2</code>\n"
+        "или просто отправь IP",
         parse_mode="HTML"
     )
 
 
-@dp.message()
+# ---------- SINGLE IP ----------
+
+@dp.message(lambda m: m.text and not m.text.startswith("/"))
 async def lookup(message: Message):
 
     ip = message.text.strip()
@@ -152,7 +159,7 @@ async def lookup(message: Message):
 
         geo = await geo_lookup(session, ip)
         if not geo:
-            await message.answer("❌ Не удалось получить данные")
+            await message.answer("❌ Geo не найдено")
             return
 
         vpn = await proxy_check(session, ip)
@@ -173,10 +180,12 @@ async def lookup(message: Message):
 <b>Страна:</b> <code>{geo.get('country', '-')}</code>
 <b>Город:</b> <code>{geo.get('city', '-')}</code>
 <b>Провайдер:</b> <code>{geo.get('isp', '-')}</code>
+<b>Организация:</b> <code>{geo.get('org', '-')}</code>
 <b>ASN:</b> <code>{geo.get('as', '-')}</code>
+<b>Reverse:</b> <code>{reverse}</code>
 
 <b>VPN/Proxy:</b> <code>{"Да" if vpn["proxy"] else "Нет"}</code>
-<b>Тип VPN:</b> <code>{vpn["type"]}</code>
+<b>Тип:</b> <code>{vpn["type"]}</code>
 <b>Risk:</b> <code>{vpn["risk"]}/100</code>
 
 <b>Тип подключения:</b> <code>{connection_type}</code>
@@ -185,30 +194,22 @@ async def lookup(message: Message):
         await message.answer(text, parse_mode="HTML")
 
 
-@dp.message(lambda m: m.text and m.text.startswith("/distance"))
+# ---------- DISTANCE COMMAND (CLEAN) ----------
+
+@dp.message(Command("distance"))
 async def distance_cmd(message: Message):
 
-    # чистим текст от лишнего мусора
-    raw = message.text.replace(",", " ").replace(";", " ")
-    parts = raw.split()
+    parts = message.text.split()
 
-    ips = []
-    for p in parts:
-        try:
-            ipaddress.ip_address(p)
-            ips.append(p)
-        except:
-            continue
-
-    if len(ips) != 2:
-        await message.answer(
-            "❌ Использование:\n"
-            "<code>/distance ip1 ip2</code>",
-            parse_mode="HTML"
-        )
+    if len(parts) != 3:
+        await message.answer("❌ Использование:\n<code>/distance ip1 ip2</code>", parse_mode="HTML")
         return
 
-    ip1, ip2 = ips
+    ip1, ip2 = parts[1], parts[2]
+
+    if not is_ip(ip1) or not is_ip(ip2):
+        await message.answer("❌ Некорректный IP")
+        return
 
     async with aiohttp.ClientSession() as session:
 
@@ -223,7 +224,7 @@ async def distance_cmd(message: Message):
         )
 
         if not geo1 or not geo2:
-            await message.answer("❌ Не удалось получить geo")
+            await message.answer("❌ Geo не найдено")
             return
 
         reverse1 = reverse_lookup(ip1)
@@ -248,35 +249,28 @@ async def distance_cmd(message: Message):
 
         text = f"""
 <b>📍 IP #1</b> <code>{ip1}</code>
-<b>Город:</b> <code>{geo1.get('city', '-')}</code>
-<b>Страна:</b> <code>{geo1.get('country', '-')}</code>
-<b>Провайдер:</b> <code>{geo1.get('isp', '-')}</code>
-<b>Организация:</b> <code>{geo1.get('org', '-')}</code>
-<b>Reverse:</b> <code>{reverse1}</code>
-<b>VPN/Proxy:</b> <code>{"Да" if vpn1["proxy"] else "Нет"}</code>
-<b>Тип VPN:</b> <code>{vpn1["type"]}</code>
-<b>Risk:</b> <code>{vpn1["risk"]}/100</code>
-<b>Тип подключения:</b> <code>{type1}</code>
+Город: <code>{geo1.get('city','-')}</code>
+Провайдер: <code>{geo1.get('isp','-')}</code>
+VPN: <code>{"Да" if vpn1["proxy"] else "Нет"}</code>
+Тип: <code>{type1}</code>
 
 ━━━━━━━━━━━━━━
 
 <b>📍 IP #2</b> <code>{ip2}</code>
-<b>Город:</b> <code>{geo2.get('city', '-')}</code>
-<b>Страна:</b> <code>{geo2.get('country', '-')}</code>
-<b>Провайдер:</b> <code>{geo2.get('isp', '-')}</code>
-<b>Организация:</b> <code>{geo2.get('org', '-')}</code>
-<b>Reverse:</b> <code>{reverse2}</code>
-<b>VPN/Proxy:</b> <code>{"Да" if vpn2["proxy"] else "Нет"}</code>
-<b>Тип VPN:</b> <code>{vpn2["type"]}</code>
-<b>Risk:</b> <code>{vpn2["risk"]}/100</code>
-<b>Тип подключения:</b> <code>{type2}</code>
+Город: <code>{geo2.get('city','-')}</code>
+Провайдер: <code>{geo2.get('isp','-')}</code>
+VPN: <code>{"Да" if vpn2["proxy"] else "Нет"}</code>
+Тип: <code>{type2}</code>
 
 ━━━━━━━━━━━━━━
 
-<b>📏 Расстояние между IP:</b> <code>{distance} км</code>
+<b>📏 Расстояние:</b> <code>{distance} км</code>
 """
 
         await message.answer(text, parse_mode="HTML")
+
+
+# ---------- RUN ----------
 
 async def main():
     await dp.start_polling(bot)
