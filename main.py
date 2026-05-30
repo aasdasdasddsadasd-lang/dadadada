@@ -265,6 +265,11 @@ async def distance_cmd(message: Message):
 
         geo1 = merge_geo(ipapi1, ipwho1)
         geo2 = merge_geo(ipapi2, ipwho2)
+        connection_type = detect_connection_type(
+            geo.get("isp", ""),
+            geo.get("org", ""),
+            reverse
+        )
 
         if not geo1 or not geo2:
             await message.answer("❌ Geo не найдено")
