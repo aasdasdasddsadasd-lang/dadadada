@@ -188,17 +188,27 @@ async def lookup(message: Message):
 @dp.message(lambda m: m.text and m.text.startswith("/distance"))
 async def distance_cmd(message: Message):
 
-    ips = re.findall(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", message.text)
+    # чистим текст от лишнего мусора
+    raw = message.text.replace(",", " ").replace(";", " ")
+    parts = raw.split()
+
+    ips = []
+    for p in parts:
+        try:
+            ipaddress.ip_address(p)
+            ips.append(p)
+        except:
+            continue
 
     if len(ips) != 2:
-        await message.answer("❌ Использование:\n/distance ip1 ip2")
+        await message.answer(
+            "❌ Использование:\n"
+            "<code>/distance ip1 ip2</code>",
+            parse_mode="HTML"
+        )
         return
 
     ip1, ip2 = ips
-
-    if not is_ip(ip1) or not is_ip(ip2):
-        await message.answer("❌ Некорректный IP")
-        return
 
     async with aiohttp.ClientSession() as session:
 
@@ -216,6 +226,21 @@ async def distance_cmd(message: Message):
             await message.answer("❌ Не удалось получить geo")
             return
 
+        reverse1 = reverse_lookup(ip1)
+        reverse2 = reverse_lookup(ip2)
+
+        type1 = detect_connection_type(
+            geo1.get("isp", ""),
+            geo1.get("org", ""),
+            reverse1
+        )
+
+        type2 = detect_connection_type(
+            geo2.get("isp", ""),
+            geo2.get("org", ""),
+            reverse2
+        )
+
         distance = calculate_distance(
             geo1["lat"], geo1["lon"],
             geo2["lat"], geo2["lon"]
@@ -224,25 +249,34 @@ async def distance_cmd(message: Message):
         text = f"""
 <b>📍 IP #1</b> <code>{ip1}</code>
 <b>Город:</b> <code>{geo1.get('city', '-')}</code>
+<b>Страна:</b> <code>{geo1.get('country', '-')}</code>
 <b>Провайдер:</b> <code>{geo1.get('isp', '-')}</code>
-<b>VPN:</b> <code>{"Да" if vpn1["proxy"] else "Нет"}</code>
-<b>Тип:</b> <code>{detect_connection_type(geo1.get('isp',''), geo1.get('org',''), reverse_lookup(ip1))}</code>
+<b>Организация:</b> <code>{geo1.get('org', '-')}</code>
+<b>Reverse:</b> <code>{reverse1}</code>
+<b>VPN/Proxy:</b> <code>{"Да" if vpn1["proxy"] else "Нет"}</code>
+<b>Тип VPN:</b> <code>{vpn1["type"]}</code>
+<b>Risk:</b> <code>{vpn1["risk"]}/100</code>
+<b>Тип подключения:</b> <code>{type1}</code>
 
 ━━━━━━━━━━━━━━
 
 <b>📍 IP #2</b> <code>{ip2}</code>
 <b>Город:</b> <code>{geo2.get('city', '-')}</code>
+<b>Страна:</b> <code>{geo2.get('country', '-')}</code>
 <b>Провайдер:</b> <code>{geo2.get('isp', '-')}</code>
-<b>VPN:</b> <code>{"Да" if vpn2["proxy"] else "Нет"}</code>
-<b>Тип:</b> <code>{detect_connection_type(geo2.get('isp',''), geo2.get('org',''), reverse_lookup(ip2))}</code>
+<b>Организация:</b> <code>{geo2.get('org', '-')}</code>
+<b>Reverse:</b> <code>{reverse2}</code>
+<b>VPN/Proxy:</b> <code>{"Да" if vpn2["proxy"] else "Нет"}</code>
+<b>Тип VPN:</b> <code>{vpn2["type"]}</code>
+<b>Risk:</b> <code>{vpn2["risk"]}/100</code>
+<b>Тип подключения:</b> <code>{type2}</code>
 
 ━━━━━━━━━━━━━━
 
-<b>📏 Расстояние:</b> <code>{distance} км</code>
+<b>📏 Расстояние между IP:</b> <code>{distance} км</code>
 """
 
         await message.answer(text, parse_mode="HTML")
-
 
 async def main():
     await dp.start_polling(bot)
