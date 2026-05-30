@@ -283,6 +283,7 @@ async def distance_cmd(message: Message):
 <b>ASN:</b> <code>{geo1.get('asn','-')}</code>
 
 <b>VPN:</b> <code>{"Да" if vpn1["proxy"] else "Нет"}</code>
+<b>Тип подключения:</b> <code>{connection_type}</code>
 
 ━━━━━━━━━━━━━━
 
@@ -293,6 +294,7 @@ async def distance_cmd(message: Message):
 <b>ASN:</b> <code>{geo2.get('asn','-')}</code>
 
 <b>VPN:</b> <code>{"Да" if vpn2["proxy"] else "Нет"}</code>
+<b>Тип подключения:</b> <code>{connection_type}</code>
 
 ━━━━━━━━━━━━━━
 
