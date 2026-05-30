@@ -265,9 +265,17 @@ async def distance_cmd(message: Message):
 
         geo1 = merge_geo(ipapi1, ipwho1)
         geo2 = merge_geo(ipapi2, ipwho2)
-        connection_type = detect_connection_type(
-            geo.get("isp", ""),
-            geo.get("org", ""),
+
+        ip = message.text.strip()
+        reverse = reverse_lookup(ip)
+        connection_type1 = detect_connection_type(
+            geo1.get("isp", ""),
+            geo1.get("org", ""),
+            reverse
+        )
+        connection_type2 = detect_connection_type(
+            geo2.get("isp", ""),
+            geo2.get("org", ""),
             reverse
         )
 
@@ -288,7 +296,7 @@ async def distance_cmd(message: Message):
 <b>ASN:</b> <code>{geo1.get('asn','-')}</code>
 
 <b>VPN:</b> <code>{"Да" if vpn1["proxy"] else "Нет"}</code>
-<b>Тип подключения:</b> <code>{connection_type}</code>
+<b>Тип подключения:</b> <code>{connection_type1}</code>
 
 ━━━━━━━━━━━━━━
 
@@ -299,7 +307,7 @@ async def distance_cmd(message: Message):
 <b>ASN:</b> <code>{geo2.get('asn','-')}</code>
 
 <b>VPN:</b> <code>{"Да" if vpn2["proxy"] else "Нет"}</code>
-<b>Тип подключения:</b> <code>{connection_type}</code>
+<b>Тип подключения:</b> <code>{connection_type2}</code>
 
 ━━━━━━━━━━━━━━
 
