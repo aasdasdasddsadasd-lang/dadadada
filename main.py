@@ -53,6 +53,34 @@ def calculate_distance(lat1, lon1, lat2, lon2):
 
     return round(R * c, 2)
 
+def detect_connection_type(isp, org, reverse):
+
+    text = f"{isp} {org} {reverse}".lower()
+
+    DATACENTER = [
+        "amazon", "aws", "google", "azure", "ovh",
+        "hetzner", "digitalocean", "linode",
+        "vultr", "contabo", "m247", "cloud",
+        "hosting", "server"
+    ]
+
+    MOBILE = ["mts", "tele2", "megafon", "beeline", "yota"]
+
+    HOME = ["rostelecom", "dom.ru", "er-telecom", "ttk", "ufanet", "mediacom"]
+
+    for item in DATACENTER:
+        if item in text:
+            return "🖥 VPS / Datacenter"
+
+    for item in MOBILE:
+        if item in text:
+            return "📱 Мобильный интернет"
+
+    for item in HOME:
+        if item in text:
+            return "🏠 Домашний интернет"
+
+    return "❓ Не определено"
 
 # ---------- API LAYER ----------
 
@@ -173,6 +201,12 @@ async def lookup(message: Message):
         vpn = await proxy_check(session, ip)
         reverse = reverse_lookup(ip)
 
+        connection_type = detect_connection_type(
+            geo.get("isp", ""),
+            geo.get("org", ""),
+            reverse
+        )
+
         text = f"""
 <b>📍 IP:</b> <code>{ip}</code>
 
@@ -195,6 +229,7 @@ async def lookup(message: Message):
 ━━━━━━━━━━━━━━
 
 <b>VPN/Proxy:</b> <code>{"Да" if vpn["proxy"] else "Нет"}</code>
+<b>Тип подключения:</b> <code>{connection_type}</code>
 <b>Тип:</b> <code>{vpn["type"]}</code>
 <b>Risk:</b> <code>{vpn["risk"]}/100</code>
 """
