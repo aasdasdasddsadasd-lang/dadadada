@@ -38,7 +38,6 @@ def calculate_distance(lat1, lon1, lat2, lon2):
 
     phi1 = math.radians(lat1)
     phi2 = math.radians(lat2)
-
     d_phi = math.radians(lat2 - lat1)
     d_lambda = math.radians(lon2 - lon1)
 
@@ -290,6 +289,7 @@ async def distance_cmd(message: Message):
 
         text = f"""
 <b>📍 IP #1</b> <code>{ip1}</code>
+<b>Страна:</b> <code>{geo1.get('country','-')}</code>
 <b>Город:</b> <code>{geo1.get('city','-')}</code>
 <b>Провайдер:</b> <code>{geo1.get('isp','-')}</code>
 <b>Org:</b> <code>{geo1.get('org','-')}</code>
@@ -301,6 +301,7 @@ async def distance_cmd(message: Message):
 ━━━━━━━━━━━━━━
 
 <b>📍 IP #2</b> <code>{ip2}</code>
+<b>Страна:</b> <code>{geo2.get('country','-')}</code>
 <b>Город:</b> <code>{geo2.get('city','-')}</code>
 <b>Провайдер:</b> <code>{geo2.get('isp','-')}</code>
 <b>Org:</b> <code>{geo2.get('org','-')}</code>
