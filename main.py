@@ -14,9 +14,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import Command, CommandStart
 from aiogram.types import ErrorEvent, Message
 
-# ──────────────────────────────────────────────────────────────────────────
-# Логирование
-# ──────────────────────────────────────────────────────────────────────────
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,25 +22,19 @@ logging.basicConfig(
 )
 log = logging.getLogger("ip_analyzer_bot")
 
-# ──────────────────────────────────────────────────────────────────────────
-# Конфигурация
-# ──────────────────────────────────────────────────────────────────────────
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PROXYCHECK_KEY = os.getenv("PROXYCHECK_KEY")
 IP2LOCATION_KEY = os.getenv("IP2LOCATION_KEY")
 
-DNS_TIMEOUT = 5          # секунд на reverse DNS lookup
-HTTP_TIMEOUT = 10        # секунд на запросы к geo/proxy API
-CACHE_TTL = 15 * 60      # 15 минут кэш на результаты по IP
-RATE_LIMIT_SECONDS = 3   # минимальный интервал между запросами одного юзера
+DNS_TIMEOUT = 5
+HTTP_TIMEOUT = 10
+CACHE_TTL = 15 * 60
+RATE_LIMIT_SECONDS = 3
 
 bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher()
 
-# ──────────────────────────────────────────────────────────────────────────
-# Простой in-memory TTL-кэш (ip -> (timestamp, payload))
-# ──────────────────────────────────────────────────────────────────────────
 
 _cache: dict[str, tuple[float, dict]] = {}
 
@@ -62,10 +54,6 @@ def cache_set(key: str, value: dict) -> None:
     _cache[key] = (time.monotonic(), value)
 
 
-# ──────────────────────────────────────────────────────────────────────────
-# Rate limiting (простой, в памяти)
-# ──────────────────────────────────────────────────────────────────────────
-
 _last_call: dict[int, float] = {}
 
 
@@ -78,9 +66,6 @@ def is_rate_limited(user_id: int) -> bool:
     return False
 
 
-# ──────────────────────────────────────────────────────────────────────────
-# Утилиты
-# ──────────────────────────────────────────────────────────────────────────
 
 def is_ip(value: str) -> bool:
     try:
@@ -91,8 +76,6 @@ def is_ip(value: str) -> bool:
 
 
 def is_public_ip(value: str) -> bool:
-    """Отсекаем приватные/loopback/link-local/зарезервированные адреса —
-    геолокационные API по ним всё равно ничего адекватного не вернут."""
     try:
         addr = ipaddress.ip_address(value)
     except ValueError:
@@ -108,7 +91,6 @@ def is_public_ip(value: str) -> bool:
 
 
 def esc(value) -> str:
-    """Безопасно готовим значение для вставки в HTML-разметку Telegram."""
     if value is None:
         return "-"
     return html.escape(str(value))
@@ -177,12 +159,7 @@ def detect_connection_type(isp: str, org: str, reverse: str) -> str:
     return "❓ Не определено"
 
 
-# ──────────────────────────────────────────────────────────────────────────
-# Внешние API
-# ──────────────────────────────────────────────────────────────────────────
-
 async def geo_ip2location(session: aiohttp.ClientSession, ip: str) -> Optional[dict]:
-    """IP2Location.io geolocation lookup (работает и без ключа — keyless free)."""
     try:
         url = "https://api.ip2location.io/"
         params = {"ip": ip, "format": "json"}
@@ -282,7 +259,6 @@ async def proxy_check(session: aiohttp.ClientSession, ip: str) -> dict:
 
 
 async def gather_ip_data(session: aiohttp.ClientSession, ip: str) -> Optional[dict]:
-    """Собирает geo + vpn + reverse по IP, с кэшированием результата."""
     cached = cache_get(ip)
     if cached:
         return cached
@@ -309,10 +285,6 @@ async def gather_ip_data(session: aiohttp.ClientSession, ip: str) -> Optional[di
     cache_set(ip, result)
     return result
 
-
-# ──────────────────────────────────────────────────────────────────────────
-# Форматирование ответов (с экранированием всех внешних данных)
-# ──────────────────────────────────────────────────────────────────────────
 
 def format_lookup_text(ip: str, geo: dict, vpn: dict, reverse: str, connection_type: str) -> str:
     is_proxy_field = geo.get("is_proxy")
@@ -379,13 +351,10 @@ def format_distance_text(
 
 ━━━━━━━━━━━━━━
 
-<b>📏 Расстояние:</b> <code>{esc(distance)} км</code>
+<b>📏 Между н.п:</b> <code>{esc(distance)} км</code>
 """.strip()
 
 
-# ──────────────────────────────────────────────────────────────────────────
-# Хендлеры
-# ──────────────────────────────────────────────────────────────────────────
 
 @dp.message(CommandStart())
 async def start(message: Message):
@@ -472,11 +441,6 @@ async def distance_cmd(message: Message):
     )
     await message.answer(text)
 
-
-# ──────────────────────────────────────────────────────────────────────────
-# Глобальный обработчик ошибок
-# ──────────────────────────────────────────────────────────────────────────
-
 @dp.errors()
 async def error_handler(event: ErrorEvent):
     log.exception("Unhandled error while processing update", exc_info=event.exception)
@@ -490,9 +454,6 @@ async def error_handler(event: ErrorEvent):
     return True
 
 
-# ──────────────────────────────────────────────────────────────────────────
-# Точка входа
-# ──────────────────────────────────────────────────────────────────────────
 
 async def main():
     if not BOT_TOKEN:
