@@ -358,6 +358,7 @@ def format_distance_text(
 
 @dp.message(CommandStart())
 async def start(message: Message):
+    log.info("%s: /start", message.from_user.id)
     await message.answer(
         "📡 <b>IP Analyzer</b>\n\n"
         "Отправь IP адрес, чтобы получить информацию о нём.\n"
@@ -373,6 +374,7 @@ async def lookup(message: Message):
         return
 
     ip = message.text.strip()
+    log.info("%s: %s", message.from_user.id, ip)
 
     if not is_ip(ip):
         await message.answer("❌ Некорректный IP")
@@ -395,6 +397,7 @@ async def lookup(message: Message):
 
 @dp.message(Command("distance"))
 async def distance_cmd(message: Message):
+    log.info("%s: %s", message.from_user.id, message.text)
     if is_rate_limited(message.from_user.id):
         await message.answer("⏳ Слишком часто. Подожди пару секунд и попробуй снова.")
         return
