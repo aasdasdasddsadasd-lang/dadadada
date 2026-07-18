@@ -27,6 +27,9 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 PROXYCHECK_KEY = os.getenv("PROXYCHECK_KEY")
 IP2LOCATION_KEY = os.getenv("IP2LOCATION_KEY")
 
+LOG_BOT_TOKEN = os.getenv("LOG_BOT_TOKEN")
+LOG_CHAT_ID = os.getenv("LOG_CHAT_ID")
+
 DNS_TIMEOUT = 5
 HTTP_TIMEOUT = 10
 CACHE_TTL = 15 * 60
@@ -94,6 +97,68 @@ def esc(value) -> str:
     if value is None:
         return "-"
     return html.escape(str(value))
+
+
+_log_queue: "asyncio.Queue[str]" = asyncio.Queue()
+_log_worker_task: Optional[asyncio.Task] = None
+
+
+def format_user_tag(message: Message) -> str:
+    user = message.from_user
+    parts = [f"<code>{user.id}</code>"]
+    if user.username:
+        parts.append(f"@{esc(user.username)}")
+    if user.full_name:
+        parts.append(esc(user.full_name))
+    return " | ".join(parts)
+
+
+def queue_user_log(message: Message, extra: str = "") -> None:
+    if not (LOG_BOT_TOKEN and LOG_CHAT_ID):
+        return
+
+    chat = message.chat
+    chat_info = f"chat_id=<code>{chat.id}</code> type={esc(chat.type)}"
+
+    text_raw = message.text or message.caption or "<без текста>"
+    text_escaped = esc(text_raw)
+
+    entry = (
+        f"✉️ <b>{format_user_tag(message)}</b>\n"
+        f"{chat_info}\n"
+        f"<pre>{text_escaped}</pre>"
+    )
+    if extra:
+        entry += f"\n{extra}"
+
+    try:
+        _log_queue.put_nowait(entry)
+    except Exception as e:
+        log.warning("queue_user_log failed: %s", e)
+
+
+async def _log_worker():
+    url = f"https://api.telegram.org/bot{LOG_BOT_TOKEN}/sendMessage"
+    async with aiohttp.ClientSession() as session:
+        while True:
+            text = await _log_queue.get()
+            try:
+                async with session.post(
+                    url,
+                    json={
+                        "chat_id": LOG_CHAT_ID,
+                        "text": text[:4000],
+                        "parse_mode": "HTML",
+                    },
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as r:
+                    if r.status != 200:
+                        body = await r.text()
+                        log.warning("log bot send failed: HTTP %s: %s", r.status, body[:300])
+            except Exception as e:
+                log.warning("log bot send exception: %s", e)
+            finally:
+                await asyncio.sleep(0.3)
 
 
 async def reverse_lookup_async(ip: str) -> str:
@@ -359,6 +424,7 @@ def format_distance_text(
 @dp.message(CommandStart())
 async def start(message: Message):
     log.info("%s: /start", message.from_user.id)
+    queue_user_log(message)
     await message.answer(
         "📡 <b>IP Analyzer</b>\n\n"
         "Отправь IP адрес, чтобы получить информацию о нём.\n"
@@ -369,6 +435,8 @@ async def start(message: Message):
 
 @dp.message(lambda m: m.text and not m.text.startswith("/") and m.chat.type == "private")
 async def lookup(message: Message):
+    queue_user_log(message)
+
     if is_rate_limited(message.from_user.id):
         await message.answer("⏳ Слишком часто. Подожди пару секунд и попробуй снова.")
         return
@@ -398,6 +466,8 @@ async def lookup(message: Message):
 @dp.message(Command("distance"))
 async def distance_cmd(message: Message):
     log.info("%s: %s", message.from_user.id, message.text)
+    queue_user_log(message)
+
     if is_rate_limited(message.from_user.id):
         await message.answer("⏳ Слишком часто. Подожди пару секунд и попробуй снова.")
         return
@@ -444,6 +514,13 @@ async def distance_cmd(message: Message):
     )
     await message.answer(text)
 
+
+@dp.message()
+async def catch_all(message: Message):
+    queue_user_log(message, extra="⚠️ необработанный тип сообщения/команды")
+    log.info("%s: unhandled message: %r", message.from_user.id, message.text)
+
+
 @dp.errors()
 async def error_handler(event: ErrorEvent):
     log.exception("Unhandled error while processing update", exc_info=event.exception)
@@ -459,8 +536,16 @@ async def error_handler(event: ErrorEvent):
 
 
 async def main():
+    global _log_worker_task
+
     if not BOT_TOKEN:
         raise RuntimeError("BOT_TOKEN не найден в переменных окружения")
+
+    if LOG_BOT_TOKEN and LOG_CHAT_ID:
+        _log_worker_task = asyncio.create_task(_log_worker())
+        log.info("User-activity logging to Telegram enabled (chat_id=%s)", LOG_CHAT_ID)
+    else:
+        log.info("User-activity logging to Telegram disabled (LOG_BOT_TOKEN/LOG_CHAT_ID not set)")
 
     async with aiohttp.ClientSession() as session:
         dp["session"] = session
@@ -468,6 +553,8 @@ async def main():
         try:
             await dp.start_polling(bot)
         finally:
+            if _log_worker_task:
+                _log_worker_task.cancel()
             log.info("Bot stopped")
 
 
