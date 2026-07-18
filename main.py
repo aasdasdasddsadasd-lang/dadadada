@@ -27,6 +27,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 PROXYCHECK_KEY = os.getenv("PROXYCHECK_KEY")
 IP2LOCATION_KEY = os.getenv("IP2LOCATION_KEY")
 
+# Второй бот — только для пересылки логов активности админу/в чат
 LOG_BOT_TOKEN = os.getenv("LOG_BOT_TOKEN")
 LOG_CHAT_ID = os.getenv("LOG_CHAT_ID")
 
@@ -99,35 +100,26 @@ def esc(value) -> str:
     return html.escape(str(value))
 
 
+# ---------------------------------------------------------------------------
+# Логирование активности пользователей во второй чат через отдельного бота
+# ---------------------------------------------------------------------------
+
 _log_queue: "asyncio.Queue[str]" = asyncio.Queue()
 _log_worker_task: Optional[asyncio.Task] = None
 
 
-def format_user_tag(message: Message) -> str:
-    user = message.from_user
-    parts = [f"<code>{user.id}</code>"]
-    if user.username:
-        parts.append(f"@{esc(user.username)}")
-    if user.full_name:
-        parts.append(esc(user.full_name))
-    return " | ".join(parts)
-
-
 def queue_user_log(message: Message, extra: str = "") -> None:
+    """Кладём запись в очередь неблокирующе. Вызывать из любого хэндлера."""
     if not (LOG_BOT_TOKEN and LOG_CHAT_ID):
         return
 
-    chat = message.chat
-    chat_info = f"chat_id=<code>{chat.id}</code> type={esc(chat.type)}"
+    user = message.from_user
+    name = esc(user.username and f"@{user.username}" or user.full_name)
 
     text_raw = message.text or message.caption or "<без текста>"
     text_escaped = esc(text_raw)
 
-    entry = (
-        f"✉️ <b>{format_user_tag(message)}</b>\n"
-        f"{chat_info}\n"
-        f"<pre>{text_escaped}</pre>"
-    )
+    entry = f"{name} (<code>{user.id}</code>): {text_escaped}"
     if extra:
         entry += f"\n{extra}"
 
@@ -138,6 +130,8 @@ def queue_user_log(message: Message, extra: str = "") -> None:
 
 
 async def _log_worker():
+    """Фоновая задача: последовательно отправляет логи в LOG_CHAT_ID,
+    чтобы не упереться в rate-limit Telegram и не блокировать основной поток."""
     url = f"https://api.telegram.org/bot{LOG_BOT_TOKEN}/sendMessage"
     async with aiohttp.ClientSession() as session:
         while True:
@@ -158,6 +152,7 @@ async def _log_worker():
             except Exception as e:
                 log.warning("log bot send exception: %s", e)
             finally:
+                # небольшая пауза, чтобы не словить flood control при всплеске сообщений
                 await asyncio.sleep(0.3)
 
 
