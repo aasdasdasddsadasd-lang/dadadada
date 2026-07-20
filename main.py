@@ -27,7 +27,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 PROXYCHECK_KEY = os.getenv("PROXYCHECK_KEY")
 IP2LOCATION_KEY = os.getenv("IP2LOCATION_KEY")
 
-# Второй бот — только для пересылки логов активности админу/в чат
+# Второй бот — только для пересылки логов активности в лог-чат/группу
 LOG_BOT_TOKEN = os.getenv("LOG_BOT_TOKEN")
 LOG_CHAT_ID = os.getenv("LOG_CHAT_ID")
 
@@ -108,7 +108,8 @@ _log_queue: "asyncio.Queue[str]" = asyncio.Queue()
 _log_worker_task: Optional[asyncio.Task] = None
 
 
-def describe_content(message:Message) -> str:
+def describe_content(message: Message) -> str:
+    """Человекочитаемое описание того, что прислал юзер, если это не обычный текст."""
     if message.text:
         return esc(message.text)
     if message.caption:
@@ -148,6 +149,10 @@ def has_forwardable_media(message: Message) -> bool:
 
 
 async def forward_to_admin(message: Message) -> None:
+    """Пересылает оригинал сообщения (фото/стикер/файл/и т.д.) в лог-чат/группу.
+    Работает через ОСНОВНОГО бота, т.к. только он реально видел этот файл.
+    Если LOG_CHAT_ID — обычный чат с человеком (не группа), тот человек должен
+    хотя бы раз написать основному боту, чтобы у бота было право ему написать."""
     if not LOG_CHAT_ID:
         return
     try:
@@ -157,7 +162,8 @@ async def forward_to_admin(message: Message) -> None:
             message_id=message.message_id,
         )
     except Exception as e:
-        log.warning("forward_to_admin failed: %s", e)    
+        log.warning("forward_to_admin failed: %s", e)
+
 
 def queue_user_log(message: Message, extra: str = "") -> None:
     """Кладём запись в очередь неблокирующе. Вызывать из любого хэндлера."""
@@ -167,8 +173,7 @@ def queue_user_log(message: Message, extra: str = "") -> None:
     user = message.from_user
     name = esc(user.username and f"@{user.username}" or user.full_name)
 
-    text_raw = message.text or message.caption or "<без текста>"
-    text_escaped = esc(text_raw)
+    text_escaped = describe_content(message)
 
     entry = f"{name} (<code>{user.id}</code>): {text_escaped}"
     if extra:
@@ -561,10 +566,14 @@ async def distance_cmd(message: Message):
     await message.answer(text)
 
 
+# Ловим вообще все прочие апдейты с сообщениями (например, команды, которые
+# не совпали ни с одним хэндлером выше) — чтобы точно ничего не потерять из логов.
 @dp.message()
 async def catch_all(message: Message):
-    queue_user_log(message, extra="⚠️ необработанный тип сообщения/команды")
-    log.info("%s: unhandled message: %r", message.from_user.id, message.text)
+    queue_user_log(message)
+    log.info("%s: %s", message.from_user.id, describe_content(message))
+    if has_forwardable_media(message):
+        asyncio.create_task(forward_to_admin(message))
 
 
 @dp.errors()
