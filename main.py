@@ -108,6 +108,57 @@ _log_queue: "asyncio.Queue[str]" = asyncio.Queue()
 _log_worker_task: Optional[asyncio.Task] = None
 
 
+def describe_content(message:Message) -> str:
+    if message.text:
+        return esc(message.text)
+    if message.caption:
+        return esc(message.caption)
+    if message.sticker:
+        emoji = message.sticker.emoji or ""
+        return f"🌟 стикер {emoji}".strip()
+    if message.photo:
+        return "🖼 фото"
+    if message.video:
+        return "🎥 видео"
+    if message.video_note:
+        return "🎥 видеосообщение (кружок)"
+    if message.voice:
+        return "🎤 голосовое сообщение"
+    if message.audio:
+        return "🎵 аудио"
+    if message.document:
+        return f"📄 файл: {esc(message.document.file_name or 'без имени')}"
+    if message.animation:
+        return "🎞 GIF"
+    if message.contact:
+        return "📇 контакт"
+    if message.location:
+        return "📍 геолокация"
+    if message.poll:
+        return f"📊 опрос: {esc(message.poll.question)}"
+    return "<неизвестный тип сообщения>"
+
+
+def has_forwardable_media(message: Message) -> bool:
+    return any([
+        message.sticker, message.photo, message.video, message.video_note,
+        message.voice, message.audio, message.document, message.animation,
+        message.contact, message.location, message.poll,
+    ])
+
+
+async def forward_to_admin(message: Message) -> None:
+    if not LOG_CHAT_ID:
+        return
+    try:
+        await bot.forward_message(
+            chat_id=int(LOG_CHAT_ID),
+            from_chat_id=message.chat.id,
+            message_id=message.message_id,
+        )
+    except Exception as e:
+        log.warning("forward_to_admin failed: %s", e)    
+
 def queue_user_log(message: Message, extra: str = "") -> None:
     """Кладём запись в очередь неблокирующе. Вызывать из любого хэндлера."""
     if not (LOG_BOT_TOKEN and LOG_CHAT_ID):
